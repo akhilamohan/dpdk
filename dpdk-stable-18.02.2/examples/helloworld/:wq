@@ -1,0 +1,183 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2010-2014 Intel Corporation
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <errno.h>
+#include <sys/queue.h>
+#include <stdlib.h>
+
+#include <rte_memory.h>
+#include <rte_launch.h>
+#include <rte_eal.h>
+#include <rte_per_lcore.h>
+#include <rte_lcore.h>
+#include <rte_debug.h>
+
+#include <openssl/aes.h>
+
+static int
+lcore_hello(__attribute__((unused)) void *arg)
+{
+	unsigned lcore_id;
+	lcore_id = rte_lcore_id();
+	printf("hello from core %u\n", lcore_id);
+	return 0;
+}
+
+static void print_data(const char *tittle, const void* data, int len)
+{
+	printf("%s : ",tittle);
+	const unsigned char * p = (const unsigned char*)data;
+	int i = 0;
+	
+	for (; i<len; ++i) {
+		printf("%02X ", *p);
+	}
+	printf("\n");
+}
+
+static int verify_padding(unsigned char *data,  unsigned int data_len)
+{
+        unsigned int pad_len, i;
+
+        pad_len = data[data_len - 1];
+        if ((pad_len <= 0) || (pad_len > 16)) {
+                printf("Invalid pad data len %d\n", pad_len);
+                return -1;
+        }
+        for (i = 1; i <= pad_len; i++) {
+                if (data[data_len - i] != pad_len) {
+                        printf("Invalid pad data\n");
+                        return -1;
+                }
+        }
+        return 0;
+}
+
+static int aes_decrypt(unsigned char *enc_data, unsigned int data_len,
+                const unsigned char *aes_key, unsigned int key_size,
+                unsigned char **dec_data, unsigned int *dec_data_len)
+{
+        AES_KEY dec_key;
+        unsigned char iv[AES_BLOCK_SIZE];
+        memset(iv, 0x00, AES_BLOCK_SIZE);
+        int pad_len;
+        memset(iv, 0x00, AES_BLOCK_SIZE);
+        if ((16 != key_size) &&
+                        (24 != key_size) &&
+                        (32 != key_size)) {
+                printf("Invalid key size\n");
+                return -1;
+        }
+        if (AES_set_decrypt_key(aes_key, key_size*8, &dec_key)) {
+                printf("AES_set_decrypt_key failed\n");
+                return -1;
+        }
+        *dec_data = calloc(data_len, 1);
+        if (NULL == *dec_data) {
+                printf("Failed to allocate memory\n");
+                return -1;
+        }
+
+        AES_cbc_encrypt(enc_data, *dec_data, data_len, &dec_key, iv, AES_DECRYPT);
+        pad_len = verify_padding(*dec_data, data_len);
+        if (pad_len == -1)
+                return -1;
+        *dec_data_len = data_len - pad_len;
+        return 0;
+}
+
+static int aes_encrypt(unsigned char *data, unsigned int data_len,
+                const unsigned char *aes_key, unsigned int key_size,
+                unsigned char **enc_data, unsigned int *enc_data_len)
+{
+        AES_KEY enc_key;
+        unsigned char iv[AES_BLOCK_SIZE];
+        unsigned char *plain_data;
+        unsigned int i;
+        int pad_len;
+        memset(iv, 0x00, AES_BLOCK_SIZE);
+        if ((16 != key_size) &&
+                        (24 != key_size) &&
+                        (32 != key_size)) {
+                printf("Invalid key size\n");
+                return -1;
+        }
+
+        plain_data = calloc(data_len + AES_BLOCK_SIZE, 1);
+        if (NULL == plain_data) {
+                printf("Failed to allocate memory\n");
+                return -1;
+        }
+        memcpy(plain_data, data, data_len);
+        pad_len = AES_BLOCK_SIZE - ((int) data_len % AES_BLOCK_SIZE);
+        for (i = data_len; i < (data_len + pad_len); i++)
+                plain_data[i] = pad_len;
+        data_len += pad_len;
+        if (AES_set_encrypt_key(aes_key, key_size*8, &enc_key)) {
+                printf("AES_set_encrypt_key failed\n");
+                return -1;
+        }
+        *enc_data = calloc(data_len, 1);
+        if (NULL == *enc_data) {
+                printf("Failed to allocate memory\n");
+                return -1;
+        }
+        AES_cbc_encrypt(plain_data, *enc_data, data_len, &enc_key, iv, AES_ENCRYPT);
+        *enc_data_len = data_len;
+        return 0;
+}
+
+int main( )
+{
+        /* Input data to encrypt */
+        unsigned char aes_input[]={0,1,2,3,4,5};
+        unsigned int enc_len, dec_len;
+
+        const unsigned char aes_key[]={0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
+
+        /* Init vector */
+        unsigned char iv[AES_BLOCK_SIZE];
+        memset(iv, 0x00, AES_BLOCK_SIZE);
+
+        unsigned char *dec_out, *enc_out;
+
+        aes_encrypt(aes_input, sizeof(aes_input), aes_key, sizeof(aes_key), &enc_out , &enc_len);
+        aes_decrypt(enc_out, enc_len, aes_key, sizeof(aes_key), &dec_out , &dec_len);
+
+        /* Printing and Verifying */
+        print_data("\n Original ", aes_input, sizeof(aes_input)); // you can not print data as a string, because after Encryption its not ASCII
+
+        print_data("\n Encrypted", enc_out, sizeof(enc_out));
+
+        print_data("\n Decrypted", dec_out, dec_len);
+
+        return 0;
+}
+
+/*
+int
+main(int argc, char **argv)
+{
+        int ret;
+        unsigned lcore_id;
+
+        ret = rte_eal_init(argc, argv);
+        if (ret < 0)
+                rte_panic("Cannot init EAL\n");
+*/
+        /* call lcore_hello() on every slave lcore */
+/*        RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+                rte_eal_remote_launch(lcore_hello, NULL, lcore_id);
+        }
+*/
+        /* call it on master lcore too */
+/*        lcore_hello(NULL);
+
+        rte_eal_mp_wait_lcore();
+        return 0;
+}
+*/

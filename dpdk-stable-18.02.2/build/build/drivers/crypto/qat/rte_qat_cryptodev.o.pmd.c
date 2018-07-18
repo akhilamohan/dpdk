@@ -1,0 +1,1 @@
+const char crypto_qat_pmd_info[] __attribute__((used)) = "PMD_INFO_STRING= {\"name\" : \"crypto_qat\", \"pci_ids\" : [[32902, 1091, 65535, 65535],[32902, 14281, 65535, 65535],[32902, 6627, 65535, 65535],[32902, 28501, 65535, 65535] ]}";

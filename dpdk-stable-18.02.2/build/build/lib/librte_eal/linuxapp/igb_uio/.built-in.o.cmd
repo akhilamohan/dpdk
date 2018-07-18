@@ -1,0 +1,1 @@
+cmd_/home/akhila/Downloads/dpdk-stable-18.02.2/build/build/lib/librte_eal/linuxapp/igb_uio/built-in.o :=  rm -f /home/akhila/Downloads/dpdk-stable-18.02.2/build/build/lib/librte_eal/linuxapp/igb_uio/built-in.o; ar rcSTPD /home/akhila/Downloads/dpdk-stable-18.02.2/build/build/lib/librte_eal/linuxapp/igb_uio/built-in.o
